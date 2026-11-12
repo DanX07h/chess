@@ -1,0 +1,18 @@
+# Render Blueprint: one Node web service serves the website and its API.
+# The free plan uses temporary storage; see DEPLOY.md before inviting users.
+services:
+  - type: web
+    name: knightly
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm ci --include=dev && npm test && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.22.1
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /tmp/knightly-data
