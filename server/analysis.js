@@ -1,3 +1,4 @@
+import { recapStats } from "./recap.js";
 import { Chess } from "chess.js";
 export const ECO = [
   {
@@ -113,6 +114,14 @@ export const ECO = [
     side: "white",
   },
 ];
+ECO.push({
+  name: "King’s Gambit",
+  eco: "C30",
+  moves: "e4 e5 f4",
+  style: "Explosive, tactical play",
+  why: "Trade a pawn for open lines and rapid development. Practise king safety and concrete calculation before using it in rated games.",
+  side: "white",
+});
 export function identifyOpening(moves, supplied) {
   if (supplied?.name) return { name: supplied.name, eco: supplied.eco || "—" };
   const matches = ECO.filter((o) =>
@@ -126,16 +135,14 @@ export function parsePgn(pgn) {
   const chess = new Chess();
   chess.loadPgn(pgn, { strict: false });
   const headers = chess.getHeaders();
-  const moves = chess
-    .history({ verbose: true })
-    .map((m) => ({
-      san: m.san,
-      from: m.from,
-      to: m.to,
-      before: m.before,
-      after: m.after,
-      color: m.color,
-    }));
+  const moves = chess.history({ verbose: true }).map((m) => ({
+    san: m.san,
+    from: m.from,
+    to: m.to,
+    before: m.before,
+    after: m.after,
+    color: m.color,
+  }));
   const clocks = [
     ...pgn.matchAll(/\[%clk\s+(\d+):(\d+):(\d+(?:\.\d+)?)\]/g),
   ].map((m) => Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]));
@@ -221,6 +228,8 @@ export function normalizeGame(raw, platform, username, index = 0) {
     id: `${platform}-${raw.uuid || raw.id || index}-${date.getTime()}`,
     platform,
     date: date.toISOString(),
+    timestampKnown: Boolean(raw.end_time || raw.lastMoveAt || raw.createdAt),
+    rated: raw.rated !== false,
     color,
     result,
     opponent: opponent || "Anonymous",
@@ -278,7 +287,7 @@ export function summarize(games) {
     openings[key].games++;
     openings[key].wins += g.result === "win" ? 1 : 0;
     openings[key].draws += g.result === "draw" ? 1 : 0;
-    if (g.rating) ratings[g.category] = g.rating;
+    if (g.rating && g.rated !== false) ratings[g.category] = g.rating;
   }
   let recoveryGames = 0,
     recoveryWins = 0;
@@ -341,6 +350,7 @@ export function summarize(games) {
         (a, b) => b[1].loss / b[1].moves - a[1].loss / a[1].moves,
       )[0]?.[0] || null;
   return {
+    recap: recapStats(games),
     total: games.length,
     wins,
     losses,
@@ -433,13 +443,15 @@ function recommend(openings, ratings, games) {
     const defaults =
       color === "white"
         ? active
-          ? [ECO[2], ECO[0]]
+          ? [ECO.at(-1), ECO[2]]
           : quiet
             ? [ECO[6], ECO[7]]
             : [ECO[0], ECO[6]]
         : active && rating > 1200
           ? [ECO[3], ECO[5]]
-          : [ECO[5], rating > 1400 ? ECO[3] : ECO[4]];
+          : quiet
+            ? [ECO[4], ECO[5]]
+            : [ECO[5], rating > 1400 ? ECO[3] : ECO[4]];
     const choices = known
       ? [known, ...defaults.filter((o) => o.name !== known.name)].slice(0, 2)
       : defaults;

@@ -30,7 +30,7 @@ That address is your website link. Visitors only need a browser. They do not ins
 
 ## 5. Check it works
 
-- The homepage should show the labelled demo dashboard.
+- The homepage should show the username-entry form. Try the sample recap or import your account, navigate the chapters, unwrap the opening gift, and enter the dashboard.
 - The service's `/api/health` URL should return `{"ok":true}`.
 - Choose **Connect account**, enter your Chess.com or Lichess username, and wait for results. Live access to both platforms must be verified on the deployed service; the development environment blocked those destinations.
 - Open a game review and confirm Stockfish analysis completes.

@@ -56,9 +56,16 @@ app.get("/api/jobs/:id", (req, res) => {
   res.json(job);
 });
 app.post("/api/import", async (req, res) => {
-  const { platform, username } = req.body || {};
+  const { platform, username, history = "year" } = req.body || {};
   if (
     !["chess.com", "lichess"].includes(platform) ||
+    !(
+      history === "all" ||
+      history === "year" ||
+      (/^\d{4}$/.test(String(history)) &&
+        Number(history) >= 2000 &&
+        Number(history) <= new Date().getUTCFullYear())
+    ) ||
     typeof username !== "string" ||
     !/^[a-zA-Z0-9_-]{1,30}$/.test(username)
   )
@@ -81,10 +88,25 @@ app.post("/api/import", async (req, res) => {
   res.status(202).json(job);
   (async () => {
     try {
-      const imported = await importGames(platform, username, (m) => {
-        job.message = m;
-        job.progress = 15;
-      });
+      const now = new Date();
+      const since =
+        history === "all"
+          ? 0
+          : history === "year"
+            ? now.getTime() - 365 * 86400000
+            : Date.UTC(Number(history), 0, 1);
+      const until = /^\d{4}$/.test(String(history))
+        ? Math.min(now.getTime(), Date.UTC(Number(history) + 1, 0, 1) - 1)
+        : now.getTime();
+      const imported = await importGames(
+        platform,
+        username,
+        (m) => {
+          job.message = m;
+          job.progress = 15;
+        },
+        { since, until, maxGames: 2000, history },
+      );
       if (!imported.games.length)
         throw new Error(
           "No finished standard chess games found in the recent history. Try another account or platform.",

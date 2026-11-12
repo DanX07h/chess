@@ -46,6 +46,8 @@ import "@fontsource/manrope/500.css";
 import "@fontsource/manrope/600.css";
 import "@fontsource/manrope/700.css";
 import "./styles.css";
+import "./journey.css";
+import { Welcome, Recap, ImportProgress } from "./Journey.jsx";
 const START = new Chess().fen();
 const fmt = (n) => (n == null ? "—" : n.toLocaleString());
 const pct = (n) => (n == null ? "—" : `${n}%`);
@@ -79,6 +81,9 @@ function App() {
     [category, setCategory] = useState("All formats"),
     [period, setPeriod] = useState("All time"),
     [help, setHelp] = useState(false);
+  const [stage, setStage] = useState("welcome");
+  const [demoBusy, setDemoBusy] = useState(false);
+  const pendingRecap = useRef(false);
   const datasetRef = useRef(null);
   datasetRef.current = data?.id;
   async function load(id) {
@@ -89,13 +94,18 @@ function App() {
   }
   useEffect(() => {
     let active = true;
-    const id = localStorage.getItem("knightly-report") || "demo";
+    const id = localStorage.getItem("knightly-report");
+    if (!id) {
+      setLoading(false);
+      return;
+    }
     api(`/api/datasets/${id}`)
-      .catch(() => api("/api/datasets/demo"))
       .then((d) => {
         if (active) setData(d);
       })
-      .catch((e) => setError(e.message))
+      .catch(() => {
+        if (active) localStorage.removeItem("knightly-report");
+      })
       .finally(() => active && setLoading(false));
     return () => (active = false);
   }, []);
@@ -112,6 +122,10 @@ function App() {
           await load(update.datasetId);
         if (update.status === "complete") {
           await load(update.datasetId);
+          if (pendingRecap.current) {
+            pendingRecap.current = false;
+            setStage("recap");
+          }
           setTimeout(() => {
             if (!cancelled) setJob(null);
           }, 4000);
@@ -161,7 +175,65 @@ function App() {
     setPage(name);
     setMobileNav(false);
   }
+  function beginImport(j) {
+    pendingRecap.current = true;
+    setJob(j);
+    setImportOpen(false);
+    setCategory("All formats");
+    setPeriod("All time");
+    setStage("waiting");
+    setError("");
+  }
+  async function demoRecap() {
+    setDemoBusy(true);
+    setError("");
+    try {
+      await load("demo");
+      setStage("recap");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDemoBusy(false);
+    }
+  }
   const reviewGame = data?.games.find((g) => g.id === review);
+  if (stage === "welcome")
+    return (
+      <Welcome
+        data={data}
+        busy={demoBusy}
+        error={error}
+        onResume={() => setStage("dashboard")}
+        onDemo={demoRecap}
+      >
+        <AccountForm onStart={beginImport} />
+      </Welcome>
+    );
+  if (stage === "waiting")
+    return (
+      <ImportProgress
+        job={job}
+        data={data}
+        onContinue={() => {
+          pendingRecap.current = false;
+          setStage("dashboard");
+        }}
+        onRetry={() => {
+          pendingRecap.current = false;
+          setJob(null);
+          setStage("welcome");
+        }}
+      />
+    );
+  if (stage === "recap" && data)
+    return (
+      <Recap
+        data={data}
+        onFinish={() => setStage("dashboard")}
+        onStartOver={() => setStage("welcome")}
+      />
+    );
+
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobileNav ? "mobile-open" : ""}`}>
@@ -257,6 +329,10 @@ function App() {
             <strong>{page}</strong>
           </div>
           <div className="header-right">
+            <button className="text-button" onClick={() => setStage("recap")}>
+              <Sparkles size={14} />
+              Replay recap
+            </button>
             <span className="live-status">
               <i />
               {data?.demo ? "Exploring demo" : "Personal workspace"}
@@ -452,7 +528,11 @@ function App() {
               ) : page === "Openings" ? (
                 <OpeningsPage summary={summary} games={games} />
               ) : page === "Activity" ? (
-                <ActivityPage games={games} />
+                <ActivityPage
+                  games={games}
+                  coverage={data.coverage}
+                  onImport={() => setImportOpen(true)}
+                />
               ) : (
                 <TrainingPage
                   summary={summary}
@@ -480,12 +560,7 @@ function App() {
       {importOpen && (
         <ImportModal
           onClose={() => setImportOpen(false)}
-          onStart={(j) => {
-            setJob(j);
-            setImportOpen(false);
-            setCategory("All formats");
-            setPeriod("All time");
-          }}
+          onStart={beginImport}
         />
       )}
       {reviewGame && (
@@ -1169,6 +1244,36 @@ function Calendar({ games, compact = false }) {
           </button>
         </div>
       </div>
+      {!compact && (
+        <div className="calendar-jump">
+          <label>
+            Jump to month
+            <input
+              type="month"
+              aria-label="Calendar month"
+              value={`${year}-${String(mon + 1).padStart(2, "0")}`}
+              min="2000-01"
+              onChange={(e) => {
+                if (!/^\d{4}-\d{2}$/.test(e.target.value)) return;
+                const [y, m] = e.target.value.split("-").map(Number);
+                setMonth(new Date(Date.UTC(y, m - 1, 1)));
+                setSelected(null);
+              }}
+            />
+          </label>
+          <button
+            onClick={() => {
+              const d = new Date(games[games.length - 1]?.date || Date.now());
+              setMonth(
+                new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)),
+              );
+              setSelected(null);
+            }}
+          >
+            First imported month <ChevronsLeft size={14} />
+          </button>
+        </div>
+      )}
       <div className="calendar-grid">
         {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
           <span className="weekday" key={`w${i}`}>
@@ -1242,7 +1347,7 @@ function Calendar({ games, compact = false }) {
     </div>
   );
 }
-function ActivityPage({ games }) {
+function ActivityPage({ games, coverage, onImport }) {
   const total = games.length,
     wins = games.filter((g) => g.result === "win").length;
   const days = new Set(games.map((g) => g.date.slice(0, 10))).size;
@@ -1252,8 +1357,24 @@ function ActivityPage({ games }) {
       <section className="panel">
         <PanelHeading
           title="Your chess calendar"
-          subtitle="Select a day to see your results. Dates are in UTC."
+          subtitle="Jump to any month or year. Dates are in UTC."
         />
+        <div className="history-coverage">
+          <Info size={15} />
+          <span>
+            Showing {games.length} imported games
+            {games.length
+              ? ` from ${dateLabel(games.at(-1).date)} ${new Date(games.at(-1).date).getUTCFullYear()} to ${dateLabel(games[0].date)} ${new Date(games[0].date).getUTCFullYear()}`
+              : ""}
+            .
+            {coverage?.truncated
+              ? ` The ${coverage.limit}-game import limit was reached. Select an earlier year to see older games.`
+              : " Import a different year to explore more history."}
+          </span>
+          <button className="text-button" onClick={onImport}>
+            Import older games <ArrowRight size={13} />
+          </button>
+        </div>
         <Calendar games={games} />
       </section>
       <div className="activity-side">
@@ -1833,6 +1954,14 @@ function Modal({ title, onClose, children, wide = false }) {
   );
 }
 function ImportModal({ onClose, onStart }) {
+  return (
+    <Modal title="Your games. Your next chapter." onClose={onClose}>
+      <AccountForm onStart={onStart} />
+    </Modal>
+  );
+}
+function AccountForm({ onStart }) {
+  const [history, setHistory] = useState("year");
   const [platform, setPlatform] = useState("chess.com"),
     [username, setUsername] = useState(""),
     [busy, setBusy] = useState(false),
@@ -1844,7 +1973,7 @@ function ImportModal({ onClose, onStart }) {
     try {
       const result = await api("/api/import", {
         method: "POST",
-        body: JSON.stringify({ platform, username: username.trim() }),
+        body: JSON.stringify({ platform, username: username.trim(), history }),
       });
       onStart(result);
     } catch (e) {
@@ -1853,89 +1982,101 @@ function ImportModal({ onClose, onStart }) {
     }
   }
   return (
-    <Modal title="Your games. Your next chapter." onClose={onClose}>
-      <form className="import-form" onSubmit={submit}>
-        <div className="import-icon">♞</div>
-        <p>
-          Connect a public profile to discover your patterns, find your
-          openings, and make your next move count.
-        </p>
-        <label>Where do you play?</label>
-        <div className="platform-picker">
-          {[
-            ["chess.com", "Chess.com"],
-            ["lichess", "Lichess"],
-          ].map(([id, name]) => (
-            <button
-              type="button"
-              className={platform === id ? "selected" : ""}
-              aria-label={name}
-              key={id}
-              onClick={() => setPlatform(id)}
-            >
-              <span>{id === "lichess" ? "♘" : "♟"}</span>
-              {name}
-              {platform === id && <CheckCircle2 size={16} />}
-            </button>
-          ))}
+    <form className="import-form" onSubmit={submit}>
+      <div className="import-icon">♞</div>
+      <p>
+        Connect a public profile to discover your patterns, find your openings,
+        and make your next move count.
+      </p>
+      <label>Where do you play?</label>
+      <div className="platform-picker">
+        {[
+          ["chess.com", "Chess.com"],
+          ["lichess", "Lichess"],
+        ].map(([id, name]) => (
+          <button
+            type="button"
+            className={platform === id ? "selected" : ""}
+            aria-label={name}
+            key={id}
+            onClick={() => setPlatform(id)}
+          >
+            <span>{id === "lichess" ? "♘" : "♟"}</span>
+            {name}
+            {platform === id && <CheckCircle2 size={16} />}
+          </button>
+        ))}
+      </div>
+      <label htmlFor="username">Your username</label>
+      <div className="username-input">
+        <span>@</span>
+        <input
+          id="username"
+          placeholder="e.g. yourchessname"
+          required
+          minLength={1}
+          maxLength={30}
+          pattern="[A-Za-z0-9_\-]+"
+          autoComplete="off"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoFocus
+        />
+      </div>
+      <label htmlFor="history" className="history-label">
+        Which chapter should we look at?
+      </label>
+      <select
+        id="history"
+        value={history}
+        onChange={(e) => setHistory(e.target.value)}
+      >
+        <option value="year">Past 12 months</option>
+        <option value="all">All available history</option>
+        {Array.from({ length: new Date().getFullYear() - 2000 + 1 }, (_, i) =>
+          String(new Date().getFullYear() - i),
+        ).map((y) => (
+          <option key={y} value={y}>
+            {y}
+          </option>
+        ))}
+      </select>
+      <span className="input-hint">
+        Just your username — no password needed.
+      </span>
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
         </div>
-        <label htmlFor="username">Your username</label>
-        <div className="username-input">
-          <span>@</span>
-          <input
-            id="username"
-            placeholder="e.g. yourchessname"
-            required
-            minLength={1}
-            maxLength={30}
-            pattern="[A-Za-z0-9_\-]+"
-            autoComplete="off"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoFocus
-          />
-        </div>
-        <span className="input-hint">
-          Just your username — no password needed.
+      )}
+      <button
+        className="button primary import-submit"
+        disabled={busy || !username.trim()}
+      >
+        {busy ? <Loader2 size={17} className="spin" /> : <Sparkles size={17} />}{" "}
+        {busy ? "Starting your report…" : "Find my chess story"}
+        <ArrowRight size={17} />
+      </button>
+      <div className="import-details">
+        <span>
+          <Check size={13} />
+          Up to 2,000 games
         </span>
-        {error && (
-          <div className="form-error" role="alert">
-            {error}
-          </div>
-        )}
-        <button
-          className="button primary import-submit"
-          disabled={busy || !username.trim()}
-        >
-          {busy ? (
-            <Loader2 size={17} className="spin" />
-          ) : (
-            <Sparkles size={17} />
-          )}{" "}
-          {busy ? "Starting your report…" : "Find my chess story"}
-          <ArrowRight size={17} />
-        </button>
-        <div className="import-details">
-          <span>
-            <Check size={13} />
-            Up to 150 recent games
-          </span>
-          <span>
-            <Check size={13} />3 Stockfish reviews
-          </span>
-          <span>
-            <Check size={13} />
-            No sign-in required
-          </span>
-        </div>
-        <div className="subtle-note">
-          <Clock3 size={15} />
-          Your results arrive first; engine reviews run in the background. First
-          analysis may take a few minutes. Chess.com imports check up to 12
-          recent archive months.
-        </div>
-      </form>
-    </Modal>
+        <span>
+          <Check size={13} />3 Stockfish reviews
+        </span>
+        <span>
+          <Check size={13} />
+          No sign-in required
+        </span>
+      </div>
+      <div className="subtle-note">
+        <Clock3 size={15} />
+        Your results arrive first; engine reviews run in the background. First
+        analysis may take a few minutes. Select a specific year to explore older
+        games. Reports clearly show when the import limit is reached.
+      </div>
+    </form>
   );
 }
 function ReviewModal({ game: g, onClose, job, onAnalyse }) {

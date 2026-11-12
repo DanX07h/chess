@@ -1,6 +1,6 @@
 # Knightly
 
-A working first version of a personal chess insights app. Import public games from Chess.com or Lichess, explore results, and review decisions with Stockfish. The app opens with a clearly labelled, synthetic demo report.
+A working first version of a personal chess insights app. Import public games from Chess.com or Lichess, explore results, and review decisions with Stockfish. The website opens with a username form, then an 11-chapter Chess Rewind before the dashboard. Visitors can also explore a clearly labelled synthetic sample recap.
 
 ## Run
 
@@ -27,9 +27,11 @@ See [DEPLOY.md](DEPLOY.md) for the Render deployment steps. The included `render
 
 ## Included
 
-- Chess.com and Lichess username imports: up to 150 finished standard games. Chess.com checks the latest 12 archive months. Daily/correspondence games may appear in Chess.com history; they are excluded from the automatic engine review selection.
+- Chess.com and Lichess username imports: up to 2,000 finished standard games per report. Choose the past 12 months, a specific calendar year, or all available history. Both adapters report when the limit is reached. Daily/correspondence games may appear in Chess.com history; they are excluded from the automatic engine review selection.
 - Separate ratings for each time format; rating history, results and date/format filters.
-- Clickable UTC calendar with games and daily win rates.
+- Clickable UTC calendar with games and daily win rates, month/year jump, first imported month shortcut, and an older-history import action.
+- Chess Rewind: rating changes per format, game counts, highest-rated win and biggest upset, longest win streak, favourite format, local-time finishing-hour histogram, recovery, time pressure, opening results, and an opening gift reveal. Recaps can be replayed and exported as an SVG summary card.
+- Brilliant counts and a most-brilliants game are explicitly unavailable: public exports do not expose a comparable platform label. The recap instead highlights the lowest average centipawn loss among reviewed games with at least five player moves.
 - Opening results split by White and Black, sample sizes, and repertoire suggestions with explicit evidence.
 - Exploratory playstyle signals: captures/checks in the player's first 20 moves, queenside castling, and game length.
 - Stockfish 19 lite reviews, a navigable/flippable board, move assessments, evaluation graph, alternative moves, and PGN export.
@@ -52,7 +54,10 @@ Live imports were blocked by the onboarding environment's outbound network polic
 - **Time trouble:** own clock falls below the smaller of 60 seconds and 10% of the starting time, in games that have complete parsed clock comments. Timeouts are counted separately. A low clock alone does not establish poor time management; increment and position complexity matter.
 - **Phase feedback:** mean centipawn loss for the player's moves. Opening = first 10 full moves. Endgame = no queens and at most 12 pieces. Other positions = middlegame. The phase with greatest average loss and at least five reviewed moves is a suggested focus. This is a heuristic, particularly with few reviewed games.
 - **Engine limits:** automatic imports review three recent non-correspondence games, up to 120 plies (60 full moves) each, with 6,000 nodes per position using single-threaded Stockfish 19 lite. Review other games individually from My games. Evaluations and move labels are approximate. There is no fabricated accuracy percentage or deep engine claim.
-- **Ratings:** the most recently recorded game rating per format, not a cross-platform Elo estimate. Game archives can record a pre-game rating.
+- **Ratings:** the most recently recorded rated-game rating per format, not a cross-platform Elo estimate. Rating changes compare the first and last recorded ratings in that format and require two rated games. Archives can record pre-game ratings, so changes do not necessarily include the last result.
+- **Time of day:** game-end timestamps grouped by hour in the browser’s timezone. Missing source timestamps are excluded. This measures when games finish, not exact play duration.
+- **Streaks and records:** cover only the imported games; draws and losses end a win streak. Highest opponent rating and largest positive opponent/player rating gap are separate records.
+- **History scope:** “All available history” can still hit the 2,000-game cap. A visible date range and limit notice prevent presenting this sample as a lifetime total. Import an individual earlier year to reach older periods. Re-imports create a separate report, rather than silently merging old reports.
 
 ## Tests
 

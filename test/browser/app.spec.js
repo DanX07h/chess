@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: "Explore a sample recap" }).click();
+  await page.getByRole("button", { name: "Skip to dashboard" }).click();
   await expect(
     page.getByRole("heading", { name: "Your game. A little clearer." }),
   ).toBeVisible({ timeout: 45000 });
@@ -159,15 +161,25 @@ test("connect account form submits the selected platform and loads its completed
   await page.getByRole("button", { name: "Lichess", exact: true }).click();
   await page.getByLabel("Your username").fill("alice");
   await page.getByRole("button", { name: "Find my chess story" }).click();
-  await expect(page.getByText("Welcome alice.")).toBeVisible({
+  await expect(
+    page.getByRole("heading", { name: "Your chess, replayed." }),
+  ).toBeVisible({
     timeout: 10000,
   });
-  expect(submitted).toEqual({ platform: "lichess", username: "alice" });
+  expect(submitted).toEqual({
+    platform: "lichess",
+    username: "alice",
+    history: "year",
+  });
+  await page.getByRole("button", { name: "Skip to dashboard" }).click();
   await expect(page.locator(".demo-banner")).toHaveCount(0);
   await expect(
     page.locator(".stat-card").nth(2).locator(".stat-value"),
   ).toHaveText("3");
   await page.reload();
+  await page
+    .getByRole("button", { name: "Continue alice’s dashboard" })
+    .click();
   await expect(page.getByText("Welcome alice.")).toBeVisible();
 });
 test("training checklist persists and help can be dismissed with Escape", async ({
@@ -179,6 +191,8 @@ test("training checklist persists and help can be dismissed with Escape", async 
   await page.getByLabel("Complete Find one turning point").click();
   await expect(page.getByText("1 / 4 complete")).toBeVisible();
   await page.reload();
+  await page.getByRole("button", { name: "Explore a sample recap" }).click();
+  await page.getByRole("button", { name: "Skip to dashboard" }).click();
   await page
     .getByRole("button", { name: "Training plan", exact: true })
     .click();

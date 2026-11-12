@@ -92,3 +92,75 @@ test("a failed network request identifies the destination", async () => {
     /api.chess.com.*network access/,
   );
 });
+
+test("Chess.com historical imports reach older archives and report truncation", async () => {
+  const urls = [];
+  const data = await importGames("chess.com", "Alice", () => {}, {
+    maxGames: 1,
+    since: Date.UTC(2024, 0, 1),
+    until: Date.UTC(2024, 11, 31, 23, 59, 59),
+    history: "2024",
+    fetcher: async (url) => {
+      urls.push(url);
+      if (url.endsWith("/archives"))
+        return json({
+          archives: [
+            "https://api.chess.com/pub/player/alice/games/2024/01",
+            "https://api.chess.com/pub/player/alice/games/2026/01",
+          ],
+        });
+      if (url.endsWith("/2024/01"))
+        return json({
+          games: [1, 2].map((i) => ({
+            uuid: String(i),
+            pgn,
+            white: { username: "Alice", rating: 1200 },
+            black: { username: "Bob", rating: 1300 },
+            end_time: Date.UTC(2024, 0, i) / 1000,
+            time_control: "600",
+          })),
+        });
+      return json({ username: "Alice" });
+    },
+  });
+  assert.ok(urls.some((u) => u.endsWith("/2024/01")));
+  assert.ok(!urls.some((u) => u.endsWith("/2026/01")));
+  assert.equal(data.games.length, 1);
+  assert.equal(data.coverage.truncated, true);
+  assert.equal(data.coverage.history, "2024");
+  assert.ok(data.coverage.earliest.startsWith("2024"));
+});
+test("Lichess requests selected date bounds and detects game limit", async () => {
+  let endpoint;
+  const raw = {
+    id: "abc12345",
+    pgn,
+    variant: "standard",
+    createdAt: Date.UTC(2024, 0, 1),
+    players: {
+      white: { user: { name: "Alice" }, rating: 1400 },
+      black: { user: { name: "Bob" }, rating: 1401 },
+    },
+  };
+  const data = await importGames("lichess", "Alice", () => {}, {
+    maxGames: 1,
+    since: Date.UTC(2024, 0, 1),
+    until: Date.UTC(2025, 0, 1),
+    fetcher: async (url) => {
+      if (url.includes("/api/user/")) return json({ username: "Alice" });
+      endpoint = new URL(url);
+      return new Response(
+        [raw, { ...raw, id: "other123" }]
+          .map((g) => JSON.stringify(g))
+          .join("\n"),
+      );
+    },
+  });
+  assert.equal(
+    endpoint.searchParams.get("since"),
+    String(Date.UTC(2024, 0, 1)),
+  );
+  assert.equal(endpoint.searchParams.get("max"), "2");
+  assert.equal(data.games.length, 1);
+  assert.equal(data.coverage.truncated, true);
+});
