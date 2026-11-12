@@ -114,7 +114,14 @@ export function Welcome({ children, data, onResume, onDemo, error, busy }) {
     </div>
   );
 }
-export function ImportProgress({ job, data, onContinue, onRetry }) {
+export function ImportProgress({
+  job,
+  data,
+  onContinue,
+  onRetry,
+  onOpen,
+  opening,
+}) {
   return (
     <div className="journey-loading">
       <a className="journey-brand" href="/">
@@ -138,12 +145,26 @@ export function ImportProgress({ job, data, onContinue, onRetry }) {
         First we collect your selected history. Then Stockfish reviews three
         games to add a little depth. Larger histories can take a few minutes.
       </p>
+      {job?.datasetId && job.status !== "running" && (
+        <button className="button primary" onClick={onOpen} disabled={opening}>
+          {opening ? (
+            <>
+              <Loader2 size={16} className="spin" />
+              Opening report…
+            </>
+          ) : (
+            <>
+              Open my report <ArrowRight size={16} />
+            </>
+          )}
+        </button>
+      )}
       {job?.status === "error" && (
         <button className="button primary" onClick={onRetry}>
           Try another import <ArrowRight size={16} />
         </button>
       )}
-      {job?.datasetId === data?.id && (
+      {job?.status === "running" && job?.datasetId === data?.id && (
         <button className="text-button" onClick={onContinue}>
           Go to imported games while analysis finishes <ArrowRight size={15} />
         </button>

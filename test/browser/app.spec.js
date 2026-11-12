@@ -129,6 +129,7 @@ test("connect account form submits the selected platform and loads its completed
   };
   fixture.games = fixture.games.slice(0, 3);
   let submitted;
+  let reportLoads = 0;
   await page.route("**/api/import", async (route) => {
     submitted = route.request().postDataJSON();
     await route.fulfill({
@@ -152,9 +153,10 @@ test("connect account form submits the selected platform and loads its completed
       },
     }),
   );
-  await page.route("**/api/datasets/fixture-report", (route) =>
-    route.fulfill({ json: fixture }),
-  );
+  await page.route("**/api/datasets/fixture-report", (route) => {
+    reportLoads++;
+    return route.fulfill({ json: fixture });
+  });
   await page
     .getByRole("button", { name: "Connect account", exact: true })
     .click();
@@ -166,6 +168,7 @@ test("connect account form submits the selected platform and loads its completed
   ).toBeVisible({
     timeout: 10000,
   });
+  expect(reportLoads).toBe(1);
   expect(submitted).toEqual({
     platform: "lichess",
     username: "alice",

@@ -83,13 +83,16 @@ function App() {
     [help, setHelp] = useState(false);
   const [stage, setStage] = useState("welcome");
   const [demoBusy, setDemoBusy] = useState(false);
+  const [openingReport, setOpeningReport] = useState(false);
   const pendingRecap = useRef(false);
   const datasetRef = useRef(null);
   datasetRef.current = data?.id;
   async function load(id) {
     const result = await api(`/api/datasets/${id}`);
     setData(result);
-    localStorage.setItem("knightly-report", id);
+    try {
+      localStorage.setItem("knightly-report", id);
+    } catch {}
     return result;
   }
   useEffect(() => {
@@ -112,28 +115,50 @@ function App() {
   useEffect(() => {
     if (!job?.id || job.status !== "running") return;
     let cancelled = false,
-      timer;
+      timer,
+      latest = job;
     async function poll() {
       try {
         const update = await api(`/api/jobs/${job.id}`);
         if (cancelled) return;
+        latest = update;
+        // Do not publish a terminal job status until its report has loaded.
+        // Otherwise the effect cleanup can hide a failed report request.
+        if (
+          update.datasetId &&
+          (update.status === "complete" ||
+            datasetRef.current !== update.datasetId)
+        ) {
+          if (update.status === "complete")
+            setJob({
+              ...update,
+              status: "running",
+              message: "Opening your report…",
+            });
+          const report = await api(`/api/datasets/${update.datasetId}`);
+          if (cancelled) return;
+          setData(report);
+          try {
+            localStorage.setItem("knightly-report", report.id);
+          } catch {}
+        }
         setJob(update);
-        if (update.datasetId && datasetRef.current !== update.datasetId)
-          await load(update.datasetId);
         if (update.status === "complete") {
-          await load(update.datasetId);
           if (pendingRecap.current) {
             pendingRecap.current = false;
             setStage("recap");
           }
-          setTimeout(() => {
+          timer = setTimeout(() => {
             if (!cancelled) setJob(null);
           }, 4000);
         } else if (update.status === "running") timer = setTimeout(poll, 1200);
       } catch (e) {
         if (!cancelled) {
-          setError(e.message);
-          setJob(null);
+          const message = latest.datasetId
+            ? `Your games were imported, but the report could not be opened. ${e.message}`
+            : e.message;
+          setJob({ ...latest, status: "error", message });
+          setError(message);
         }
       }
     }
@@ -142,7 +167,26 @@ function App() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [job?.id, job?.status]);
+  }, [job?.id]);
+  async function openImportedReport() {
+    if (!job?.datasetId) return;
+    setOpeningReport(true);
+    try {
+      await load(job.datasetId);
+      pendingRecap.current = false;
+      setError("");
+      setJob(null);
+      setStage("recap");
+    } catch (e) {
+      setJob((current) => ({
+        ...current,
+        status: "error",
+        message: `Could not open your report. ${e.message}`,
+      }));
+    } finally {
+      setOpeningReport(false);
+    }
+  }
   const games = useMemo(() => {
     const cutoff =
       period === "Last 7 days"
@@ -214,6 +258,8 @@ function App() {
       <ImportProgress
         job={job}
         data={data}
+        onOpen={openImportedReport}
+        opening={openingReport}
         onContinue={() => {
           pendingRecap.current = false;
           setStage("dashboard");
